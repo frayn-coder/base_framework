@@ -11,11 +11,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+DEFAULT_LOG_CATEGORIES: List[str] = ["access", "error", "app", "perf"]
+
 DEFAULT_LOG_PROJECTS: Dict[str, Dict[str, Any]] = {
-    "rag": {"enabled": True, "categories": ["access", "error", "app", "perf"]},
-    "text2sql": {"enabled": True, "categories": ["access", "error", "app", "perf"]},
-    "uie": {"enabled": True, "categories": ["access", "error", "app", "perf"]},
+    "rag": {"enabled": True, "categories": list(DEFAULT_LOG_CATEGORIES)},
+    "text2sql": {"enabled": True, "categories": list(DEFAULT_LOG_CATEGORIES)},
+    "uie": {"enabled": True, "categories": list(DEFAULT_LOG_CATEGORIES)},
 }
+
+PROJECT_ENV_PREFIX = "LOG_PROJECT_"
 
 
 def _split_env_list(raw_value: str) -> List[str]:
@@ -33,8 +37,68 @@ def _default_projects() -> Dict[str, Dict[str, Any]]:
     }
 
 
+def _coerce_project_config(project: str, config: Dict[str, Any]) -> Dict[str, Any] | None:
+    """Validate a single project configuration mapping."""
+
+    if not isinstance(config, dict):
+        return None
+
+    defaults = DEFAULT_LOG_PROJECTS.get(
+        project,
+        {"enabled": True, "categories": list(DEFAULT_LOG_CATEGORIES)},
+    )
+
+    enabled_val = config.get("enabled", defaults["enabled"])
+    if isinstance(enabled_val, str):
+        enabled = enabled_val.strip().lower() not in {"false", "0", "no", "off"}
+    else:
+        enabled = bool(enabled_val)
+
+    categories_val = config.get("categories", defaults["categories"])
+    if isinstance(categories_val, (list, tuple)):
+        categories = [str(cat).strip() for cat in categories_val if str(cat).strip()]
+    else:
+        categories = [
+            item for item in _split_env_list(str(categories_val)) if item and item != "*"
+        ]
+
+    if not categories:
+        categories = list(defaults["categories"])
+
+    return {"enabled": enabled, "categories": categories}
+
+
+def _load_project_overrides() -> Dict[str, Dict[str, Any]]:
+    """Load project configurations from segmented environment variables."""
+
+    overrides: Dict[str, Dict[str, Any]] = {}
+    for key, raw_value in os.environ.items():
+        if not key.startswith(PROJECT_ENV_PREFIX):
+            continue
+
+        suffix = key[len(PROJECT_ENV_PREFIX) :].strip()
+        if not suffix:
+            continue
+
+        project = suffix.lower()
+        try:
+            parsed = json.loads(raw_value)
+        except json.JSONDecodeError:
+            continue
+
+        cleaned = _coerce_project_config(project, parsed)
+        if cleaned:
+            overrides[project] = cleaned
+
+    return overrides
+
+
 def _load_projects(raw_value: str | None) -> Dict[str, Dict[str, Any]]:
     """Parse the logging projects definition from environment variables."""
+
+    overrides = _load_project_overrides()
+    if overrides:
+        return overrides
 
     if not raw_value:
         return _default_projects()
@@ -49,24 +113,10 @@ def _load_projects(raw_value: str | None) -> Dict[str, Dict[str, Any]]:
 
     cleaned: Dict[str, Dict[str, Any]] = {}
     for project, config in parsed.items():
-        if not isinstance(config, dict):
-            continue
-
-        enabled_val = config.get("enabled", True)
-        if isinstance(enabled_val, str):
-            enabled = enabled_val.strip().lower() not in {"false", "0", "no", "off"}
-        else:
-            enabled = bool(enabled_val)
-        categories = config.get("categories", [])
-        if isinstance(categories, (list, tuple)):
-            category_list = [str(cat).strip() for cat in categories if str(cat).strip()]
-        else:
-            category_list = _split_env_list(str(categories))
-
-        cleaned[str(project)] = {
-            "enabled": enabled,
-            "categories": category_list,
-        }
+        project_name = str(project).lower()
+        cleaned_config = _coerce_project_config(project_name, config)
+        if cleaned_config:
+            cleaned[project_name] = cleaned_config
 
     return cleaned or _default_projects()
 
