@@ -1,0 +1,14 @@
+logging:
+  level: INFO
+  log_root: logs
+  backup_days: 7
+  projects:
+    rag:
+      enabled: true
+      categories: [access, error, app, perf]
+    text2sql:
+      enabled: true
+      categories: [access, error, app, perf]
+    uie:
+      enabled: true
+      categories: [access, error, app, perf]
