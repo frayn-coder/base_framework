@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Request, Depends
-from apps.common import get_logger_with_trace
+from fastapi import FastAPI, Request, Depends, HTTPException
+from apps.common import get_logger_with_trace, read_document
 from fastapi.responses import JSONResponse
 import logging, time
 
@@ -45,5 +45,15 @@ def create_app() -> FastAPI:
         cost = (time.time() - start) * 1000
         logger.info(f"RAG 性能测试完成，耗时 {cost:.2f} ms")
         return {"perf": f"{cost:.2f} ms"}
+
+    @app.get("/data/sample")
+    async def read_sample_prompt(logger=Depends(get_rag_logger)):
+        try:
+            content = read_document("rag", "example_prompt.txt")
+        except FileNotFoundError as exc:
+            logger.warning("示例 prompt 不存在", extra={"filename": "example_prompt.txt"})
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        logger.info("返回 RAG 示例 prompt")
+        return {"filename": "example_prompt.txt", "content": content}
 
     return app

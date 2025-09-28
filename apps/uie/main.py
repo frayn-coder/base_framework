@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Request, Depends
-from apps.common import get_logger_with_trace
+from fastapi import FastAPI, Request, Depends, HTTPException
+from apps.common import get_logger_with_trace, read_document
 from fastapi.responses import JSONResponse
 import logging
 
@@ -39,5 +39,15 @@ def create_app() -> FastAPI:
     @app.get("/test-error")
     async def test_error():
         return 1/0
+
+    @app.get("/data/sample")
+    async def read_sample_prompt(logger=Depends(get_uie_logger)):
+        try:
+            content = read_document("uie", "example_prompt.json")
+        except FileNotFoundError as exc:
+            logger.warning("UIE 示例 prompt 不存在", extra={"filename": "example_prompt.json"})
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        logger.info("返回 UIE 示例 prompt")
+        return {"filename": "example_prompt.json", "content": content}
 
     return app
