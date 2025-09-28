@@ -1,14 +1,18 @@
 import uuid
+
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
+
+from apps.common import LoggerManager, get_settings
 from apps.rag.main import create_app as create_rag
 from apps.text2sql.main import create_app as create_t2s
 from apps.uie.main import create_app as create_uie
-from apps.common import LoggerManager
 
-logger_manager = LoggerManager("logging.yaml")
+settings = get_settings()
+
+logger_manager = LoggerManager(str(settings.log_config_path))
 
 # 子项目日志器
 rag_access = logger_manager.get_project_logger("rag", "access")
@@ -29,11 +33,11 @@ uie_perf   = logger_manager.get_project_logger("uie", "perf")
 system_logger = logger_manager.system_logger
 
 def create_main_app() -> FastAPI:
-    app = FastAPI(title="Unified API Server")
+    app = FastAPI(title=settings.app_name)
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=settings.allow_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -96,7 +100,12 @@ app = create_main_app()
 
 if __name__ == "__main__":
     try:
-        uvicorn.run("main:app", host="0.0.0.0", port=8081, reload=True)
+        uvicorn.run(
+            "main:app",
+            host=settings.api_host,
+            port=settings.api_port,
+            reload=True,
+        )
     finally:
         logger_manager.stop()
         system_logger.info("Unified API Server 已停止")
