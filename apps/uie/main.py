@@ -1,43 +1,14 @@
-from fastapi import FastAPI, Request, Depends
-from apps.common import get_logger_with_trace
-from fastapi.responses import JSONResponse
-import logging
+"""Application factory for the UIE service."""
+from __future__ import annotations
+
+from fastapi import FastAPI
+
+from .routers import sample
+from .utils.exceptions import register_exception_handlers
+
 
 def create_app() -> FastAPI:
     app = FastAPI(title="UIE Service")
-
-    def get_uie_logger(request: Request) -> logging.LoggerAdapter:
-        from main import uie_app
-        return get_logger_with_trace(uie_app, request)
-    
-    # ✅ 新增：子应用的全局异常处理器
-    @app.exception_handler(Exception)
-    async def uie_exception_handler(request: Request, exc: Exception):
-        from main import uie_error  # 运行时导入子项目的 error logger
-        err_logger = get_logger_with_trace(uie_error, request)
-        err_logger.error("Unhandled exception", exc_info=True)  # 带堆栈
-
-        trace_id = getattr(request.state, "trace_id", None)
-        headers = {}
-        if trace_id:
-            headers["X-Trace-ID"] = trace_id
-
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal Server Error", "trace_id": trace_id},
-            headers=headers
-        )
-
-
-    @app.get("/query")
-    async def query_uie(logger=Depends(get_uie_logger)):
-        logger.info("UIE 信息抽取开始")
-        result = {"entities": ["张三", "北京"]}
-        logger.info(f"抽取结果: {result}")
-        return result
-
-    @app.get("/test-error")
-    async def test_error():
-        return 1/0
-
+    register_exception_handlers(app)
+    app.include_router(sample.router)
     return app

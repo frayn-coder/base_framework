@@ -1,0 +1,1 @@
+-- Provide a SQL query that answers the user's question.
