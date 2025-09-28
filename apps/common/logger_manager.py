@@ -2,22 +2,21 @@
 import logging
 import os
 import queue
-import yaml
-from typing import Optional
+from typing import Any, Dict, Mapping, Optional
 from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListener
 from apps.common.json_formatter import JSONFormatter
 
 
 class LoggerManager:
     """
-    日志管理类（支持 YAML 配置 + 异步队列）
+    日志管理类（支持字典配置 + 异步队列）
     - 每个子项目：access / error / app / perf 四类日志（各写各的）
     - 全局：system.log
     - 关键点：每个文件 handler 绑定一个 Filter，只接收匹配 logger 名称的记录，避免“广播到所有文件”
     """
 
-    def __init__(self, config_file: str = "logging.yaml"):
-        self._load_config(config_file)
+    def __init__(self, config: Optional[Mapping[str, Any]] = None):
+        self._apply_config(config or {})
 
         self.log_queue = queue.Queue(-1)
         self._loggers: dict[str, logging.Logger] = {}
@@ -32,22 +31,44 @@ class LoggerManager:
             level=self.log_level,
         )
 
-        # （可选）按 YAML 预创建项目日志器
+        # （可选）按配置预创建项目日志器
         for project, conf in self.projects.items():
             if conf.get("enabled", False):
                 for category in conf.get("categories", []):
                     self.get_project_logger(project, category)
 
     # ---------- config ----------
-    def _load_config(self, config_file: str):
-        with open(config_file, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
-        log_cfg = cfg.get("logging", {})
+    def _apply_config(self, config: Mapping[str, Any]):
+        level_name = str(config.get("level", "INFO")).upper()
+        self.log_level = getattr(logging, level_name, logging.INFO)
+        self.log_root = str(config.get("log_root", "logs"))
+        self.backup_days = int(config.get("backup_days", 7))
 
-        self.log_root = log_cfg.get("log_root", "logs")
-        self.backup_days = log_cfg.get("backup_days", 7)
-        self.log_level = getattr(logging, log_cfg.get("level", "INFO").upper(), logging.INFO)
-        self.projects = log_cfg.get("projects", {})
+        raw_projects = config.get("projects", {})
+        projects: Dict[str, Dict[str, Any]] = {}
+        if isinstance(raw_projects, Mapping):
+            for project, conf in raw_projects.items():
+                if not isinstance(conf, Mapping):
+                    continue
+
+                categories = conf.get("categories", [])
+                if isinstance(categories, (list, tuple)):
+                    category_list = [str(cat).strip() for cat in categories if str(cat).strip()]
+                else:
+                    category_list = [str(categories)] if categories else []
+
+                enabled_val = conf.get("enabled", True)
+                if isinstance(enabled_val, str):
+                    enabled = enabled_val.strip().lower() not in {"false", "0", "no", "off"}
+                else:
+                    enabled = bool(enabled_val)
+
+                projects[str(project)] = {
+                    "enabled": enabled,
+                    "categories": category_list,
+                }
+
+        self.projects = projects
 
         os.makedirs(self.log_root, exist_ok=True)
 

@@ -12,7 +12,7 @@ from apps.uie.main import create_app as create_uie
 
 settings = get_settings()
 
-logger_manager = LoggerManager(str(settings.log_config_path))
+logger_manager = LoggerManager(settings.logging_config)
 
 # 子项目日志器
 rag_access = logger_manager.get_project_logger("rag", "access")
